@@ -88,7 +88,10 @@ class SimpleOdometry(VisualGPSNav):
         self._add_kp_obs(cf, kp_ids, kp_obs, is_keyframe=True)
         self.logger.info("New keypoints detected: %d" % (len(kp_ids),))
 
-    def tracking_stats(self):
+    def tracking_stats(self, max_ba_steps=1000):
+        prev_steps = self.max_ba_fun_eval
+        self.max_ba_fun_eval = max_ba_steps
+
         # optimize all poses and keypoint 3d coords
         self._bundle_adjustment(same_thread=True)
 
@@ -101,6 +104,8 @@ class SimpleOdometry(VisualGPSNav):
         # reoptimize all poses and keypoint 3d coords if necessary
         if len(rem_kp_ids) > 0:
             self._bundle_adjustment(same_thread=True)
+
+        self.max_ba_fun_eval = prev_steps
 
         # to reduce bias in error stats, we will exclude all features that are present in the last keyframe
         #  - Note that long track length features might end up under-represented,

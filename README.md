@@ -18,8 +18,12 @@ The codebase could also be used for calculating the performance of descriptor-ba
 
 ## Installation / dependencies
 
-Create a conda environment and install additional packages using pip:
+You can install the package and dependencies using pip:
+```
+pip install git+https://github.com/oknuutti/featstat
+```
 
+Alternatively, you can clone the repository and then create a conda environment:
 ```
 conda create -n featstat -c conda-forge python=3.10 pip numpy numba quaternion scipy opencv python-dateutil tqdm matplotlib
 conda activate featstat
