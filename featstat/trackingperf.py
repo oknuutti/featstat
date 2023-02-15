@@ -114,7 +114,7 @@ def main():
         old_img, old_kp_obs = img, kp_obs
 
     # calculate final stats
-    pos, ori, kp_ids, kp_3d, succ_rate, track_len, repr_err = odo.tracking_stats()
+    pos, ori, kp_ids, kp_3d, succ_rate, track_len, repr_err, repr_err_ids = odo.tracking_stats()
 
     n_bins = 6
     hist = np.bincount(track_len, minlength=n_bins)

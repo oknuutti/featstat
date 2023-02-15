@@ -88,7 +88,7 @@ class SimpleOdometry(VisualGPSNav):
         self._add_kp_obs(cf, kp_ids, kp_obs, is_keyframe=True)
         self.logger.info("New keypoints detected: %d" % (len(kp_ids),))
 
-    def tracking_stats(self, max_ba_steps=1000):
+    def tracking_stats(self, max_ba_steps=1000, excl_lf_feats=True):
         prev_steps = self.max_ba_fun_eval
         self.max_ba_fun_eval = max_ba_steps
 
@@ -110,7 +110,7 @@ class SimpleOdometry(VisualGPSNav):
         # to reduce bias in error stats, we will exclude all features that are present in the last keyframe
         #  - Note that long track length features might end up under-represented,
         #    however, if we don't exclude, short track length features might end up over-represented
-        excl_ids = set(nf.kps_uv.keys())
+        excl_ids = set(nf.kps_uv.keys()) if excl_lf_feats else set()
 
         # extract poses and structure
         pos, ori = zip(*[(kf.pose.post.loc, kf.pose.post.quat) for kf in self.state.keyframes])
@@ -119,7 +119,7 @@ class SimpleOdometry(VisualGPSNav):
 
         # for how many features it was possible to estimate 3d coordinates
         n2d = len([id for id in self.state.map2d.keys() if id not in excl_ids])
-        succ_rate = len(kp_ids) / (n2d + len(kp_ids))
+        succ_rate = 0 if len(kp_ids) == 0 else len(kp_ids) / (n2d + len(kp_ids))
 
         # average tracking length in keyframes by counting all observations
         track_len = np.array(list(Counter([id for kf in self.state.keyframes
@@ -131,8 +131,12 @@ class SimpleOdometry(VisualGPSNav):
                                     for id, err in kf.repr_err.items()
                                         if id not in excl_ids]).reshape((-1, 2))
         repr_err = np.linalg.norm(repr_err, axis=1)
+        
+        repr_err_ids = np.array([[i, id] for i, kf in enumerate(self.state.keyframes)
+                                    for id, err in kf.repr_err.items()
+                                        if id not in excl_ids], dtype=int).reshape((-1, 2))
 
-        return pos, ori, kp_ids, kp_3d, succ_rate, track_len, repr_err
+        return pos, ori, kp_ids, kp_3d, succ_rate, track_len, repr_err, repr_err_ids
 
     def repr_err(self, frame=None, adaptive=None):
         return self._repr_err

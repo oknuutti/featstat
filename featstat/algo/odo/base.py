@@ -1361,7 +1361,7 @@ class VisualOdometry:
                   if pt_id in self.state.map3d and (not active_kp_only or self.state.map3d[pt_id].active))
 
         if len(ids) == 0:
-            return
+            return [None] * 9
 
         tmp = [(id, self.state.map3d[id].pt3d) for id in ids]
         ids, pts3d = map(np.array, zip(*tmp))
@@ -1446,6 +1446,10 @@ class VisualOdometry:
                     self._get_visual_ba_args(keyframes, current_only, distorted=dist_coefs is not None)
             skip_pose_n = (1 if skip_meas and not self.enable_marginalization else 0) if not current_only else 0
 
+            if keyframes is None:
+                self.logger.warning("No keypoints available for BA")
+                return
+
             if not skip_meas:
                 meas_idxs = np.array([i for i, kf in enumerate(keyframes) if kf.measure is not None], dtype=int)
                 meas_q = {i: keyframes[i].pose.prior.quat.conj() for i in meas_idxs}
@@ -1489,6 +1493,9 @@ class VisualOdometry:
                 marginalize_pose_idxs=np.where(np.in1d(kf_ids, rem_kf_ids))[0],
                 marginalize_pt3d_idxs=np.where(np.in1d(ids, rem_kp_ids))[0],
             ))
+
+        if False:
+            kwargs['log_writer'] = LogWriter(logger=self.logger)
 
         poses_ba, pts3d_ba, dist_ba, cam_intr, t_off, new_prior, errs = \
             self._call_ba(vis_gps_bundle_adj, args, kwargs, parallize=not same_thread)
