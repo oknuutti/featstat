@@ -7,7 +7,7 @@ import quaternion  # adds to numpy  # noqa # pylint: disable=unused-import
 
 from featstat.algo.tools import Pose
 from featstat.algo.model import Camera
-from featstat.algo.odo.base import Frame, PoseEstimate, Keypoint
+from featstat.algo.odo.base import Frame, PoseEstimate, Keypoint, State
 from featstat.algo.odo.visgps_odo import VisualGPSNav
 
 
@@ -21,6 +21,7 @@ class SimpleOdometry(VisualGPSNav):
         self._repr_err = repr_err
         self._rem_kp_ids = []
         self.check_2d2d_result = False
+        self.est_3d2d_iter_count = 20000
 
     def first_frame(self, kp_ids, kp_obs):
         assert len(kp_ids) == len(kp_obs), 'kp_ids and kp_obs need to have same length'
@@ -88,12 +89,33 @@ class SimpleOdometry(VisualGPSNav):
         self._add_kp_obs(cf, kp_ids, kp_obs, is_keyframe=True)
         self.logger.info("New keypoints detected: %d" % (len(kp_ids),))
 
-    def tracking_stats(self, max_ba_steps=1000, excl_lf_feats=True):
+    def pair_stats_with_known_kp3d(self, kp_ids, kp2d2, kp3d2, max_ba_steps=1000):
+        self.state = State()
+        ff = self._add_frame(True)
+        nf = self._add_frame(True)
+        self.state.initialized = True
+        self.state.map3d = {id: Keypoint(id=id, pt3d=pt3d, pt3d_added_frame_id=nf.id)
+                            for id, pt3d in zip(kp_ids, kp3d2)}
+        self._add_kp_obs(nf, kp_ids, kp2d2, True)
+        self.solve_pnp(nf, use_3d2d_ransac=True, min_inliers=12, lf=ff)
+
+        # in case solve_pnp failed
+        if self.state.keyframes[-1].pose.post is None:
+            self.state.keyframes[-1].pose.post = self.state.keyframes[-2].pose.post
+        
+        return self.tracking_stats(max_ba_steps=max_ba_steps, excl_lf_feats=False, known_kp3d=True)
+
+    def tracking_stats(self, max_ba_steps=1000, excl_lf_feats=True, known_kp3d=False):
         prev_steps = self.max_ba_fun_eval
         self.max_ba_fun_eval = max_ba_steps
 
         # optimize all poses and keypoint 3d coords
-        self._bundle_adjustment(same_thread=True)
+        try:
+            self._bundle_adjustment(same_thread=True, current_only=known_kp3d)
+        except ValueError as e:
+            # Residuals are not finite in the initial point.
+            self.logger.warning("BA failed: %s" % (e,))
+            return [None] * 8
 
         # remove keypoints with too large reprojection error from the last keyframe
         nf = self.state.keyframes[-1]
@@ -103,7 +125,7 @@ class SimpleOdometry(VisualGPSNav):
 
         # reoptimize all poses and keypoint 3d coords if necessary
         if len(rem_kp_ids) > 0:
-            self._bundle_adjustment(same_thread=True)
+            self._bundle_adjustment(same_thread=True, current_only=known_kp3d)
 
         self.max_ba_fun_eval = prev_steps
 

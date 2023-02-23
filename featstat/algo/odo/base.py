@@ -124,11 +124,11 @@ class Frame:
 class Keypoint:
     _NEXT_ID = 1
 
-    def __init__(self, id=None, pt3d=None):
+    def __init__(self, id=None, pt3d=None, pt3d_added_frame_id=None):
         self._id = Keypoint._NEXT_ID if id is None else id
         Keypoint._NEXT_ID = max(self._id + 1, Keypoint._NEXT_ID)
         self.pt3d = pt3d
-        self.pt3d_added_frame_id = None
+        self.pt3d_added_frame_id = pt3d_added_frame_id
         self.total_count = 0
         self.inlier_count = 0
         self.inlier_time = None
@@ -920,7 +920,7 @@ class VisualOdometry:
             if self.opt_init_ransac or use_3d2d_ransac:
                 ok, rv, r, inliers = cv2.solvePnPRansac(pts3d, pts2d, self.cam.cam_mx, None,
                                                         iterationsCount=self.est_3d2d_iter_count,
-                                                        reprojectionError=self.repr_err(kf),
+                                                        reprojectionError=self.repr_err(kf), 
                                                         flags=self.est_3d2d_method)
 
                 # calculate delta-q and delta-r
