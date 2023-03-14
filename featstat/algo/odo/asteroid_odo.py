@@ -9,7 +9,7 @@ from featstat.algo.image import ImageProc
 
 
 class VisualGPSNav(VisualOdometry):
-    def check_features(self, image, in_kp2d):
+    def check_features(self, old_kp2d):
         a_mask = self._feature_detection_mask(image)
         mask = np.ones((len(in_kp2d),), dtype=np.bool)
 

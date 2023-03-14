@@ -1,0 +1,3 @@
+[submodule "haste"]
+	path = haste
+	url = https://github.com/oknuutti/haste.git

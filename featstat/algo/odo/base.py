@@ -372,6 +372,9 @@ class VisualOdometry:
     def __del__(self):
         self.quit()
 
+    def reset(self):
+        self.state = self.get_new_state()
+
     def quit(self):
         cv2.destroyAllWindows()
         if self.use_ba and self.threaded_ba and self._ba_arg_queue:
@@ -530,8 +533,11 @@ class VisualOdometry:
 
     def initialize_first_keyframes(self, debug=False):
         self.triangulate(self.state.keyframes[-1])
-        if len(self.state.map3d) < self.min_inliers * 2:
-            return
+        kp3d_count, kp3d_required = len(self.state.map3d), self.min_inliers * 2
+        if kp3d_count < kp3d_required:
+            self.logger.info("Failed to initialize due to too few triangulated keypoints (%d/%d)" % (kp3d_count,
+                                                                                                     kp3d_required))
+            return False
 
         if debug:
             fig, axs = self.plt.subplots(2, len(self.state.keyframes), sharex=True, sharey=True, figsize=(9, 5))
@@ -557,7 +563,11 @@ class VisualOdometry:
             self.plt.tight_layout()
             self.plt.show()
 
-    def check_features(self, new_frame, old_kp2d, old_kp2d_norm, new_kp2d, new_kp2d_norm, mask):
+        self.logger.info("Initialized with %d keyframes and %d triangulated keypoints" % (len(self.state.keyframes),
+                                                                                          kp3d_count))
+        return True
+
+    def check_features(self, old_kp2d, old_kp2d_norm, new_kp2d, new_kp2d_norm, mask):
         mask = mask.flatten()
         if self.verify_feature_tracks or self.orb_feature_tracking:
             if 1:
@@ -573,17 +583,22 @@ class VisualOdometry:
                 mask = np.logical_and(mask, mask2.flatten())
 
         # check that not too close to image border
-        w, h = self.img_width, round(new_frame.image.shape[0] * self.img_width / new_frame.image.shape[1])
+        if self.img_width is not None:
+            w, h = self.img_width, round(self.cam.height * self.img_width / self.cam.width)
+        else:
+            w, h = self.cam.width, self.cam.height
+
+        new_kp2d = new_kp2d.squeeze()
         mask = np.logical_and.reduce((mask,
-                                      new_kp2d[:, 0, 0] >= self.no_kp_border,
-                                      new_kp2d[:, 0, 1] >= self.no_kp_border,
-                                      new_kp2d[:, 0, 0] <= w - self.no_kp_border,
-                                      new_kp2d[:, 0, 1] <= h - self.no_kp_border))
+                                      new_kp2d[:, 0] >= self.no_kp_border,
+                                      new_kp2d[:, 1] >= self.no_kp_border,
+                                      new_kp2d[:, 0] <= w - self.no_kp_border,
+                                      new_kp2d[:, 1] <= h - self.no_kp_border))
 
         if not self.orb_feature_tracking and np.sum(mask) > 1:
             # check that not too close to each other
             idxs = np.where(mask)[0]
-            D = tools.distance_mx(new_kp2d[idxs].squeeze())
+            D = tools.distance_mx(new_kp2d[idxs])
             for i, k in enumerate(idxs):
                 mask[k] = np.all(D[i, :i] > self.min_keypoint_dist * 0.5)
 
@@ -710,7 +725,7 @@ class VisualOdometry:
                 kps_uv_vel = np.array([(uv1 - uv0) / dt for dt, uv0, uv1 in zip(dt_arr, old_kp2d_norm, new_kp2d_norm)])
 
         # extra sanity check on tracked points, set mask to false if keypoint quality too poor
-        mask = self.check_features(nf, old_kp2d, old_kp2d_norm, new_kp2d, new_kp2d_norm, mask)
+        mask = self.check_features(old_kp2d, old_kp2d_norm, new_kp2d, new_kp2d_norm, mask)
         if 0:
             self._plot_tracks(nf.image, old_kp2d, new_kp2d, mask)
 
@@ -931,7 +946,7 @@ class VisualOdometry:
                 # solvePnPRansac apparently randomly gives 180deg wrong answer,
                 #  - too high translation in correct direction, why? related to delayed application of ba result?
                 if abs(tools.q_to_ypr(p_delta.quat)[0]) > math.pi * 0.9:
-                    self.logger.warning('rotated pnp-ransac solution by 180deg around z-axis')
+                    self.logger.debug('rotated pnp-ransac solution by 180deg around z-axis')
                     q_fix = tools.ypr_to_q(math.pi, 0, 0)
                     p_delta.quat = p_delta.quat * q_fix
                     r = tools.q_times_v(q_fix, r)
@@ -1296,10 +1311,12 @@ class VisualOdometry:
             if len(tmp) > 0:
                 kp_idxs, uvs = tmp[0].astype(int), np.concatenate(tmp[1, :])
                 proj_pts2d = self.cam.cam_mx.dot(f.to_mx()).dot(kps4d[kp_idxs, :].T).T
-                uvp = proj_pts2d[:, :2]/proj_pts2d[:, 2:]
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    uvp = proj_pts2d[:, :2]/proj_pts2d[:, 2:]
                 err = uvs - uvp
+                err[np.isinf(err)] = np.nan
                 errn = np.linalg.norm(err, axis=1)
-                err_sd = np.mean(np.std(err, axis=0))
+                err_sd = np.nanmean(np.nanstd(err, axis=0))
                 if 1:
                     norm_err = max(norm_err, err_sd * 2)
                     max_err = max(max_err, err_sd * 3)
@@ -1839,7 +1856,7 @@ class VisualOdometry:
                 c_diam = size
             image = cv2.circle(image, (x, y), c_diam, self._col(id), 1)   # negative thickness => filled circle
             if id in id2proj:
-                xp, yp = (np.array(uvp[id2proj[id]]) + 0.5).astype(int)
+                xp, yp = (np.array(uvp[id2proj[id]]) + 0.5).astype(np.uint16)
                 image = cv2.rectangle(image, (xp-2, yp-2), (xp+2, yp+2), self._col(id), 1)
                 image = cv2.line(image, (xp, yp), (x, y), self._col(id), 1)
 

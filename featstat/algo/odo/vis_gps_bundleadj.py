@@ -251,6 +251,7 @@ def vis_gps_bundle_adj(poses: np.ndarray, pts3d: np.ndarray, pts2d: np.ndarray, 
     repr_err = np.linalg.norm(res.fun[:cam_idxs.size * 2].reshape((-1, 2)), axis=1)
     with warnings.catch_warnings():
         warnings.filterwarnings(action='ignore', message='Mean of empty slice')
+        warnings.filterwarnings(action='ignore', message='invalid value encountered in double_scalars')
         errs = np.array([[np.median(repr_err[cam_idxs == i])] for i in range(n_cams)])
 
     if len(meas_idxs) > 0:
