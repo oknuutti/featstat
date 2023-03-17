@@ -1,4 +1,5 @@
 import math
+import os
 import time
 import logging
 import gc
@@ -269,6 +270,18 @@ class Manifold(np.ndarray):
         if dtype in (float, np.float32, np.float64):
             return self
         return self.to_array().astype(dtype, order, casting, subok, copy)
+
+
+def convert_bmp2png(path, remove=False):
+    import cv2
+    for file in os.listdir(path):
+        if file.endswith(".bmp"):
+            fullpath = os.path.join(path, file)
+            img = cv2.imread(fullpath, cv2.IMREAD_UNCHANGED)
+            ok = cv2.imwrite(fullpath[:-4] + '.png', img, (cv2.IMWRITE_PNG_COMPRESSION, 9))
+            assert ok, "failed to convert %s to png" % fullpath
+            if ok and remove:
+                os.unlink(fullpath)
 
 
 def sphere_angle_radius(loc, r):
